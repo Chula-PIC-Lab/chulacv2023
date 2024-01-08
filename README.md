@@ -1,4 +1,4 @@
-# 2110443 - Computer Vision (2023/2)
+# 2110433 - Computer Vision (2023/2)
 Computer Vision @ Chulalongkorn University
 
 ![cv2023](assets/dog-pig.gif)
