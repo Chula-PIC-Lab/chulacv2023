@@ -16,39 +16,95 @@ import cv2
 import onnxruntime as rt
 import numpy as np
 
+def resize(image, input_size):
+  shape = image.shape
+
+  ratio = float(shape[0]) / shape[1]
+  if ratio > 1:
+      h = input_size
+      w = int(h / ratio)
+  else:
+      w = input_size
+      h = int(w * ratio)
+  scale = float(h) / shape[0]
+  resized_image = cv2.resize(image, (w, h))
+  det_image = np.zeros((input_size, input_size, 3), dtype=np.uint8)
+  det_image[:h, :w, :] = resized_image
+  return det_image, scale
+
 ####
 sessOptions = rt.SessionOptions()
 sessOptions.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL 
 raccoonModel = rt.InferenceSession('raccoons.onnx', sessOptions)
 ####
-inputStream = cv2.VideoCapture(0)
+inputStream = cv2.VideoCapture(1)
 
 while True:
     isImageValid, inputImage = inputStream.read()
     
     if isImageValid:
         ### Pre-processing ###
-        inputTensor = cv2.resize(inputImage, (320,320))
-        inputTensor = (inputTensor - [103.53, 116.28, 123.675]) / [57.375, 57.12, 58.395]
-        inputTensor = inputTensor.transpose(2,0,1)[np.newaxis].astype(np.float32) #NCHW
+        image, scale = resize(inputImage, 640)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = image.transpose((2, 0, 1))[::-1]
+        image = image.astype('float32') / 255
+        image = image[np.newaxis, ...]
         ### Inference ###
-        outputBoxes, outputLabels = raccoonModel.run([], {'input': inputTensor})
+        outputs = raccoonModel.run([], {'images': image})
 
         ### Post-processing (rescale) ###
-        outputImage = inputImage.copy()
-        ratioH, ratioW = inputImage.shape[0] / 320, inputImage.shape[1] / 320
-        rescaleOutputBoxes = outputBoxes * [ratioW, ratioH, ratioW, ratioH, 1]
+        outputs = np.transpose(np.squeeze(outputs[0]))
+
+        # Lists to store the bounding boxes, scores, and class IDs of the detections
+        boxes = []
+        scores = []
+        class_indices = []
+
+        # Iterate over each row in the outputs array
+        for i in range(outputs.shape[0]):
+            # Extract the class scores from the current row
+            classes_scores = outputs[i][4:]
+
+            # Find the maximum score among the class scores
+            max_score = np.amax(classes_scores)
+
+            # If the maximum score is above the confidence threshold
+            if max_score >= 0.25:
+                # Get the class ID with the highest score
+                class_id = np.argmax(classes_scores)
+
+                # Extract the bounding box coordinates from the current row
+                image, y, w, h = outputs[i][0], outputs[i][1], outputs[i][2], outputs[i][3]
+
+                # Calculate the scaled coordinates of the bounding box
+                left = int((image - w / 2) / scale)
+                top = int((y - h / 2) / scale)
+                width = int(w / scale)
+                height = int(h / scale)
+
+                # Add the class ID, score, and box coordinates to the respective lists
+                class_indices.append(class_id)
+                scores.append(max_score)
+                boxes.append([left, top, width, height])
+
+        # Apply non-maximum suppression to filter out overlapping bounding boxes
+        indices = cv2.dnn.NMSBoxes(boxes, scores, 0.25, 0.7)
+
+        # Iterate over the selected indices after non-maximum suppression
+        nms_outputs = []
+        for i in indices:
+            # Get the box, score, and class ID corresponding to the index
+            box = boxes[i]
+            score = scores[i]
+            class_id = class_indices[i]
+            nms_outputs.append([*box, score, class_id])
 
         ### Draw and display output ###
-        for boxData in zip(rescaleOutputBoxes[0], outputLabels[0]):
-            prob  = boxData[0][4]
-            print(boxData)
-            if prob > 0.75:
-                x1,y1,x2,y2 = boxData[0][0:4].astype(np.int32)
-                label = boxData[1]
-                cv2.rectangle(outputImage, (x1,y1), (x2,y2), (0,255,0), 3)
+        for output in nms_outputs:
+            x, y, w, h, score, index = output
+            cv2.rectangle(inputImage, (int(x), int(y)), (int(x + w), int(y + h)), (0, 255, 0), 2)
         
-        cv2.imshow("Output", outputImage)
+        cv2.imshow("Output", inputImage)
         cv2.waitKey(1)
     else:
         print('Cannot open camera')
