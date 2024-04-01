@@ -35,7 +35,7 @@ def resize(image, input_size):
 ####
 sessOptions = rt.SessionOptions()
 sessOptions.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL 
-raccoonModel = rt.InferenceSession('raccoons.onnx', sessOptions)
+raccoonModel = rt.InferenceSession('raccoons.onnx', sessOptions, providers=[ 'CUDAExecutionProvider', 'CPUExecutionProvider'])
 ####
 inputStream = cv2.VideoCapture(1)
 

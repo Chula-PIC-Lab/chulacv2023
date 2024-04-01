@@ -22,7 +22,7 @@ from fastapi import FastAPI, File
 ####
 sessOptions = rt.SessionOptions()
 sessOptions.graph_optimization_level = rt.GraphOptimizationLevel.ORT_ENABLE_ALL 
-chestxrayModel = rt.InferenceSession('chestxray.onnx', sessOptions, providers=['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider'])
+chestxrayModel = rt.InferenceSession('chestxray.onnx', sessOptions, providers=[ 'CUDAExecutionProvider', 'CPUExecutionProvider'])
 ####
 app = FastAPI()
 
